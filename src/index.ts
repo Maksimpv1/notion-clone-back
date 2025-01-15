@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import OpenAI from 'openai';
 
 type Bindings = {
   OPEN_AI_KEY: string;
@@ -21,28 +22,49 @@ app.use(
   })
 );
 
+app.post('/chatToDocument', async (c) => {
+  const openai = new OpenAI({
+    apiKey: c.env.OPEN_AI_KEY,
+  });
+  const {documentData, question} = await c.req.json()
+
+  const chatComplection = await openai.chat.completions.create({
+    messages:[
+      {
+        role:'system',
+        content:'You are a assistant helping the user to chat to a document, I am providing a JSON file of the markdown for the document. Using this, answer the users question in the clearest way possible, the document is about'
+         + documentData,
+      },
+      {
+        role: 'user',
+        content: 'My Question is: ' + question, 
+      },
+    ],
+    model: "gpt-3.5-turbo",
+    temperature: 0.5,
+  });
+  const response = chatComplection.choices[0].message.content;
+
+  return c.json({ message: response })
+})
+
+
 app.post('/translateDocument', async (c) => {
   const { documentData, targetLang } = await c.req.json();
-  console.log("Received Data:", { documentData, targetLang });
 
-  const summaryResponse = await c.env.AI.run('@cf/facebook/bart-large-cnn', {
+  const summaryResponse = await c.env.AI.run("@cf/facebook/bart-large-cnn", {
     input_text: documentData,
     max_length: 1000,
   });
-  console.log("Summary Response:", summaryResponse);
-
+  
   const response = await c.env.AI.run('@cf/meta/m2m100-1.2b', {
     text: summaryResponse.summary,
     source_lang: 'english',
     target_lang: targetLang,
   });
-  console.log("Translation Response:", response);
-  return c.json(response);
+
+  return new Response(JSON.stringify(response));
 });
 
-app.get('/hello', (c) => {
-	const name= c.req.param('name');
-	return c.text(`hello, ${name}`)
-})
 
 export default app;
